@@ -2,7 +2,7 @@
 // AST type models
 import { map, zipWith} from "ramda";
 import { makeEmptySExp, makeSymbolSExp, SExpValue, makeCompoundSExp, valueToString } from '../imp/L3-value'
-import { first, second, rest, allT, isEmpty } from "../shared/list";
+import { first, second, rest, allT, isEmpty, cons } from "../shared/list";
 import { isArray, isString, isNumericString, isIdentifier } from "../shared/type-predicates";
 import { Result, makeOk, makeFailure, bind, mapResult, safe2 } from "../shared/result";
 import { parse as p, isSexpString, isToken } from "../shared/parser";
@@ -169,7 +169,7 @@ export const parseL31SpecialForm = (op: Sexp, params: Sexp[]): Result<CExp> =>
     op === "lambda" ? parseProcExp(first(params), rest(params)) :
     op === "let" ? parseLetExp(first(params), rest(params)) :
     op === "quote" ? parseLitExp(first(params)) :
-    op === "class" ? parseClassExp(first(params), rest(params)) :
+    op === "class" ? parseClassExp(first(params), second(params)) :
     makeFailure("Never");
 
 // DefineExp -> (define <varDecl> <CExp>)
@@ -229,19 +229,28 @@ const parseProcExp = (vars: Sexp, body: Sexp[]): Result<ProcExp> =>
 
 // ( class ( <var>+ ) ( <binding>+ ) )
 const parseClassExp = (fields: Sexp, methods: Sexp): Result<ClassExp> =>{
-    // if (!(isArray(fields) && fields.length > 0 && allT(isString, fields) && isGoodBindings(methods))){
-    //     return makeFailure('Invald fields or methods for ClassExp')
-    // }
-    // const methods_names = map(b => b[0], methods);
-    // const methods_name_Result = mapResult(methods => parseL31CExp(second(methods)), methods);
-    // const bindingsResult = bind(methods_name_Result, (vals: CExp[]) => makeOk(zipWith(makeBinding, methods_names, vals)));
+    if (fields === "" || !isArray(fields) || isEmpty(fields) || !allT(isIdentifier, fields)){
+        return makeFailure("fields not configured correct")
+    }
+    if (!isGoodBindings(methods)){
+        return makeFailure("methods not configured correct")
+    }
+    const fields_var_decl = map(makeVarDecl, fields)
 
-    // const fields_var_decl = map(makeVarDecl, fields);
-    // const fields_result = makeOk(fields_var_decl)
-    // return safe2((fields: VarDecl[], methods: Binding[]) => makeOk(makeClassExp(fields, methods)))(fields_result,bindingsResult);
-    const b : Binding[] = [makeBinding("aa", makeNumExp(11)), makeBinding("b", makeNumExp(22)), makeBinding("c", makeNumExp(33))]
-    const f : VarDecl[] = [makeVarDecl("zxcv")]
-    return makeOk(makeClassExp(f, b))
+    const methods_names = map(mthd => mthd[0],methods);// [ first , second , ....]
+    //const methods_body = map(mthd => mthd[1], methods); //[lambda () b, lambda() a, ..... ]
+     console.log("methods - ", methods )
+    const methods_body_result = mapResult((mthd) => parseL31CExp(second(mthd)),methods);
+     console.log("methods_body_result - ", methods_body_result )
+    
+    // if(!isArray(methods_body) || !allT(isArray, methods_body)) {
+    //     return makeFailure("");
+    // }
+    
+    //const methods_sexp = map(rest, methods_body);       // () b
+    //const methods_body_result = mapResult(mthd => parseProcExp(first(mthd), rest(mthd)), methods_sexp)
+    const bindingsResult = bind(methods_body_result, (cexp: CExp[]) => makeOk(zipWith(makeBinding, methods_names, cexp)));
+    return bind(bindingsResult,(bindings) => makeOk(makeClassExp(fields_var_decl,bindings)))
 }
 
 const isGoodBindings = (bindings: Sexp): bindings is [string, Sexp][] =>
